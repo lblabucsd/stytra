@@ -2,6 +2,7 @@ from collections import deque
 from datetime import datetime
 from queue import Empty
 from multiprocessing import Queue, Event, Value
+from lightparam import Parametrized, Param
 
 import cv2
 import numpy as np
@@ -83,6 +84,14 @@ class FrameDispatcher(FrameProcess):
         self.tracking_cls = get_tracking_method(processing_class)
         self.processing_parameter_queue = processing_parameter_queue
 
+    def retrieve_params(self):
+        while True:
+            try:
+                param_dict = self.processing_parameter_queue.get(timeout=0.0001)
+                self.processing_parameters.params.values = param_dict
+            except Empty:
+                break
+
     def process_internal(self, frame):
         """Apply processing function to current frame with
         self.processing_parameters as additional inputs.
@@ -103,25 +112,23 @@ class FrameDispatcher(FrameProcess):
         """Loop where the tracking function runs."""
 
         tracker = self.tracking_cls()
-        self.processing_parameters = tracker.params.params.values
         preprocessor = (
             self.preprocessing_cls() if self.preprocessing_cls is not None else None
         )
+
+        params_dict = tracker.params.params.items()
+        display_processed_names = ["raw"] + getattr(tracker, "processed_image_names", [])
         if preprocessor is not None:
-            self.processing_parameters.update(preprocessor.params.params.values)
+            params_dict.update(preprocessor.params.params.items())
+            display_processed_names += getattr(preprocessor, "processed_image_names", [])
+
+        params_dict.update(dict(display_processed=Param("raw",  display_processed_names)))
+
+        if self.processing_parameters is None:
+            self.processing_parameters = Parametrized(params=params_dict)
 
         while not self.finished_signal.is_set():
-
-            # Gets the processing parameters from their queue
-            if self.processing_parameter_queue is not None:
-                try:
-                    # Read all parameters from the queue:
-                    self.processing_parameters.update(
-                        **self.processing_parameter_queue.get(timeout=0.0001)
-                    )
-
-                except Empty:
-                    pass
+            self.retrieve_params()
 
             # Gets frame from its queue, if the input is too fast, drop frames
             # and process the latest, if it is too slow continue:
@@ -135,7 +142,7 @@ class FrameDispatcher(FrameProcess):
             try:
                 if self.preprocessing_cls is not None:
                     processed = preprocessor.process(
-                        frame, **self.processing_parameters
+                        frame, **self.processing_parameters.params.values
                     )
                 else:
                     processed = frame
@@ -144,7 +151,7 @@ class FrameDispatcher(FrameProcess):
 
             if self.tracking_cls is not None:
                 message, output = tracker.detect(
-                    processed, **self.processing_parameters
+                    processed, **self.processing_parameters.params.values
                 )
 
                 if len(message) > 0:
@@ -165,10 +172,8 @@ class FrameDispatcher(FrameProcess):
 
             # put current frame into the GUI queue
             if self.gui_dispatcher:
-                if self.processing_parameters.get("display_processed", "raw") != "raw":
-                    try:
-                        self.send_to_gui(tracker.diagnostic_image)
-                    except AttributeError:
+                if self.processing_parameters.display_processed != "raw":
+                    if self.processing_parameters.display_processed == "filtered":
                         if processed.shape != frame.shape:
                             processed = cv2.resize(
                                 processed,
@@ -178,6 +183,12 @@ class FrameDispatcher(FrameProcess):
                                 interpolation=cv2.INTER_AREA,
                             )
                         self.send_to_gui(processed)
+                    else:
+                        try:
+                            self.send_to_gui(tracker.diagnostic_image)
+                        except AttributeError:
+                            self.message_queue.put("E: no such processed image " +
+                                                   self.processing_parameters.display_processed)
                 else:
                     self.send_to_gui(frame)
 

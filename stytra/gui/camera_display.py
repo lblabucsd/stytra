@@ -271,7 +271,7 @@ class CameraEmbeddedTrackingSelection(CameraSelection):
         self.eyes = eyes
         self.tail = tail
         super().__init__(**kwargs)
-
+        print(self.track_params.params.items())
         # Draw ROI for tail selection:
         if tail:
             self.roi_tail = CustomLineROI(
@@ -419,6 +419,7 @@ class CameraEmbeddedTrackingSelection(CameraSelection):
                 if len(self.experiment.acc_tracking.stored_data) > 1:
                     self.roi_eyes.setPen(dict(color=(5, 40, 200), width=3))
                     e = retrieved_data[-10:]
+
                     for i, o in enumerate([0, 5]):
                         if e[0] == e[0]:
                             for ell, col in zip(

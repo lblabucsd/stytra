@@ -16,7 +16,7 @@ class EyeTrackingMethod:
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.params = Parametrized(name="tracking/eyes", params=self.detect)
-
+        self.processed_image_names = ["thresholded"]
         headers = []
         for i in range(2):
             headers.extend(
@@ -32,12 +32,13 @@ class EyeTrackingMethod:
         self.monitored_headers = ["th_e0", "th_e1"]
         self.accumulator_headers = headers
         self.data_log_name = "behavior_eyes_log"
+        # self.diagnostic_image = None
 
     def detect(
         self,
         im,
         wnd_pos: Param((0, 0), gui=False),
-        threshold: Param(100, limits=(1, 254)),
+        threshold: Param(255, limits=(1, 254)),
         wnd_dim: Param((100, 100), gui=False),
         **extraparams
     ):
@@ -70,6 +71,8 @@ class EyeTrackingMethod:
             val=255,
         )
 
+        cropped = (cropped < threshold).view(dtype=np.uint8)
+
         # try:
         e = _fit_ellipse(cropped)
 
@@ -85,6 +88,12 @@ class EyeTrackingMethod:
                 + e[1][1][::-1]
                 + (-e[1][2],)
             )
+
+        if extraparamsdisplay_processed == "background difference":
+            self.diagnostic_image = (im < threshold).view(dtype=np.uint8)
+        elif display_processed == "raw":
+            self.diagnostic_image = im
+
         return message, np.array(e)
 
 

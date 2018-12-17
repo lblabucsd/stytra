@@ -23,6 +23,7 @@ from stytra.tracking.processes import get_tracking_method, get_preprocessing_met
 from stytra.tracking.tail import TailTrackingMethod
 from stytra.tracking.eyes import EyeTrackingMethod
 from stytra.tracking.fish import FishTrackingMethod
+from stytra.tracking.eyes_tail import TailEyesTrackingMethod
 from lightparam.param_qt import ParametrizedQt
 
 from stytra.stimulation.estimators import (
@@ -212,6 +213,7 @@ class TrackingExperiment(CameraExperiment):
         if preproc_method_name is None and self.tracking_method_name in [
             "tail",
             "eyes",
+            "eyes_tail"
         ]:
             preproc_method_name = "prefilter"
 
@@ -226,7 +228,7 @@ class TrackingExperiment(CameraExperiment):
         self.tracking_method = get_tracking_method(self.tracking_method_name)()
         self.tracking_params = ParametrizedQt(
             name="tracking/" + type(self.tracking_method).name,
-            params=self.tracking_method.detect,
+            params=self.tracking_method.params.params.items(),
             tree=self.dc,
         )
 
@@ -294,8 +296,10 @@ class TrackingExperiment(CameraExperiment):
         self.refresh_plots()
 
     def make_window(self):
-        tail = isinstance(self.tracking_method, TailTrackingMethod)
-        eyes = isinstance(self.tracking_method, EyeTrackingMethod)
+        tail = isinstance(self.tracking_method, TailTrackingMethod) or \
+               isinstance(self.tracking_method, TailEyesTrackingMethod)
+        eyes = isinstance(self.tracking_method, EyeTrackingMethod) or \
+               isinstance(self.tracking_method, TailEyesTrackingMethod)
         fish = isinstance(self.tracking_method, FishTrackingMethod)
         self.window_main = TrackingExperimentWindow(
             experiment=self, tail=tail, eyes=eyes, fish=fish
