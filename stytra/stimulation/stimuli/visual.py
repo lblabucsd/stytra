@@ -666,6 +666,7 @@ def z_func_windmill(x, y, arms):
     """ Function for sinusoidal windmill of arbitrary number of arms
     symmetrical with respect to perpendicular axes (for even n)
     """
+    y += 0.0000000000000001
     if np.mod(arms, 2) == 0:
         return np.sin(np.arctan((x / y)) * arms + np.pi / 2)
     else:

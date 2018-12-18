@@ -213,6 +213,8 @@ class CameraSelection(CameraViewWidget):
         # output queue:
         self.frame_queue = self.experiment.frame_dispatchers[0].gui_queue
         self.track_params = self.experiment.tracking_method.params
+        #self.display_params =
+        # self.experiment.frame_dispatchers.processing_parameters
 
         # Redefine the source of the displayed images to be the FrameProcessor
         # output queue:
@@ -271,7 +273,6 @@ class CameraEmbeddedTrackingSelection(CameraSelection):
         self.eyes = eyes
         self.tail = tail
         super().__init__(**kwargs)
-        print(self.track_params.params.items())
         # Draw ROI for tail selection:
         if tail:
             self.roi_tail = CustomLineROI(

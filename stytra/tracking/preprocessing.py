@@ -24,7 +24,7 @@ class Prefilter:
         filter_size: Param(0, (0, 15)),
         color_invert: Param(False),
         clip: Param(0, (0, 255)),
-        display_processed: Param("raw", ["raw", "filtered"]) = "raw",
+        #display_processed: Param("raw", ["raw", "filtered"]) = "raw",
         **extraparams
     ):
         """ Optionally resizes, smooths and inverts the image

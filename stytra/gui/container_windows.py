@@ -27,6 +27,7 @@ from stytra.gui.buttons import IconButton, ToggleIconButton
 from stytra.gui.status_display import StatusMessageDisplay
 
 from lightparam.gui import ParameterGui, pretty_name
+from lightparam.gui.controls import ControlCombo
 
 
 class QPlainTextEditLogger(logging.Handler):
@@ -296,9 +297,17 @@ class TrackingExperimentWindow(CameraExperimentWindow):
         self.button_tracking_params = IconButton(
             icon_name="edit_tracking", action_name="Change tracking parameters"
         )
-        self.button_tracking_params.clicked.connect(self.open_tracking_params_tree)
+        self.button_tracking_params.clicked.connect(
+            self.open_tracking_params_tree)
+
+        print(self.experiment.frame_dispatchers)
+        self.button_display_params = ControlCombo(
+            self.experiment.frame_dispatchers[0].processing_parameters.params
+                .items()["display_processed"])
 
         self.camera_display.layout_control.addStretch(10)
+        self.camera_display.layout_control.addWidget(
+            self.button_display_params)
         self.camera_display.layout_control.addWidget(self.button_tracking_params)
 
         self.track_params_wnd = None

@@ -89,7 +89,7 @@ class EyeTrackingMethod:
                 + (-e[1][2],)
             )
 
-        if extraparamsdisplay_processed == "background difference":
+        if extraparams["display_processed"] == "background difference":
             self.diagnostic_image = (im < threshold).view(dtype=np.uint8)
         elif display_processed == "raw":
             self.diagnostic_image = im

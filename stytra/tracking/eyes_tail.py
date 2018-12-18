@@ -11,6 +11,7 @@ class TailEyesTrackingMethod:
         print("here")
         super().__init__()
         self.method_chain = [CentroidTrackingMethod(), EyeTrackingMethod()]
+        self.processed_image_names = ["thresholded"]
 
         params = dict()
         for m in self.method_chain:
