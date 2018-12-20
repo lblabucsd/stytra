@@ -132,7 +132,7 @@ class CameraViewWidget(QWidget):
         self.current_image = None
 
         self.setLayout(self.layout)
-        self.current_frame_time = None
+        self.current_frame_time = datetime.datetime.now()
 
         self.param_widget = None
 
@@ -374,6 +374,7 @@ class CameraEmbeddedTrackingSelection(CameraSelection):
             # To match tracked points and frame displayed looks for matching
             # timestamps from the two different queues:
             recent_data = self.experiment.acc_tracking.stored_data[-50:]
+
             dt_list = [
                 (
                     self.experiment.acc_tracking.starting_time

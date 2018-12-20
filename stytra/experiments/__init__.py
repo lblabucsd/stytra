@@ -230,7 +230,6 @@ class Experiment(QObject):
             self.window_display.set_dims()
 
         if self.trigger is not None:
-            print("start")
             self.trigger.start()
 
     def restore_window_state(self):

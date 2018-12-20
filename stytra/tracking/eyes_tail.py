@@ -6,12 +6,11 @@ from lightparam import Parametrized
 
 class TailEyesTrackingMethod:
     name = "eyes_tail"
+    processed_image_names = ["thresholded"]
 
     def __init__(self):
-        print("here")
         super().__init__()
         self.method_chain = [CentroidTrackingMethod(), EyeTrackingMethod()]
-        self.processed_image_names = ["thresholded"]
 
         params = dict()
         for m in self.method_chain:
@@ -37,6 +36,7 @@ class TailEyesTrackingMethod:
         self.monitored_headers = ["tail_sum", "th_e0", "th_e1"]
         self.accumulator_headers = headers
         self.data_log_name = "behavior_tail_eyes_log"
+        self.diagnostic_image = None
 
 
     def detect(self, im, **kwargs):
@@ -46,6 +46,10 @@ class TailEyesTrackingMethod:
             m, result = met.detect(im, **kwargs)
             messages += m
             results += tuple(result)
+
+        if kwargs["display_processed"] == "thresholded":
+            self.diagnostic_image = self.method_chain[1].diagnostic_image
+
         return messages, results
 
     def reset_state(self):

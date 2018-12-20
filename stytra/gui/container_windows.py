@@ -300,10 +300,9 @@ class TrackingExperimentWindow(CameraExperimentWindow):
         self.button_tracking_params.clicked.connect(
             self.open_tracking_params_tree)
 
-        print(self.experiment.frame_dispatchers)
+        n = "display_processed"
         self.button_display_params = ControlCombo(
-            self.experiment.frame_dispatchers[0].processing_parameters.params
-                .items()["display_processed"])
+            self.experiment.tracking_display_params, name=n)
 
         self.camera_display.layout_control.addStretch(10)
         self.camera_display.layout_control.addWidget(

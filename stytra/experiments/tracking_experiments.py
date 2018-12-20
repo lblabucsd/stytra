@@ -247,6 +247,12 @@ class TrackingExperiment(CameraExperiment):
             for i in range(self.n_dispatchers)
         ]
 
+        self.tracking_display_params = ParametrizedQt(
+            name="tracking/display",
+            tree=self.dc,
+            params=self.frame_dispatchers[0].get_display_params()
+        )
+
         self.acc_tracking = QueueDataAccumulator(
             name="tracking",
             data_queue=self.tracking_output_queue,
@@ -340,22 +346,19 @@ class TrackingExperiment(CameraExperiment):
         """
         super().send_gui_parameters()
         changed = self.tracking_params.params.changed_values()
+        self.tracking_params.params.acknowledge_changes()
+
+        if self.preprocessing_method is not None:
+            changed.update(self.preprocessing_params.params.changed_values())
+            self.preprocessing_params.params.acknowledge_changes()
+        changed.update(self.tracking_display_params.params.changed_values())
+        self.tracking_display_params.params.acknowledge_changes()
 
         if "n_segments" in changed.keys() or "n_fish_max" in changed.keys():
             self.refresh_accumulator_headers()
 
         for i in range(self.n_dispatchers):
-            self.processing_params_queue.put(
-                {
-                    **changed,
-                    **(
-                        self.preprocessing_params.params.values
-                        if self.preprocessing_method is not None
-                        else {}
-                    ),
-                }
-            )
-        self.tracking_params.params.acknowledge_changes()
+            self.processing_params_queue.put(changed)
 
     def start_protocol(self):
         """Reset data accumulator when starting the protocol."""

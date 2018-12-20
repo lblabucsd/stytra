@@ -12,11 +12,11 @@ class EyeTrackingMethod:
     """General eyes tracking method."""
 
     name = "eyes"
+    processed_image_names = ["thresholded"]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.params = Parametrized(name="tracking/eyes", params=self.detect)
-        self.processed_image_names = ["thresholded"]
         headers = []
         for i in range(2):
             headers.extend(
@@ -89,11 +89,8 @@ class EyeTrackingMethod:
                 + (-e[1][2],)
             )
 
-        if extraparams["display_processed"] == "background difference":
+        if extraparams["display_processed"] == "thresholded":
             self.diagnostic_image = (im < threshold).view(dtype=np.uint8)
-        elif display_processed == "raw":
-            self.diagnostic_image = im
-
         return message, np.array(e)
 
 

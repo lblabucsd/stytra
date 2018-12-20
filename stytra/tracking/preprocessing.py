@@ -11,6 +11,7 @@ from lightparam import Parametrized, Param
 
 
 class Prefilter:
+    processed_image_names = ["filtered"]
     def __init__(self):
         super().__init__()
         self.params = Parametrized(name="tracking/prefiltering", params=self.process)

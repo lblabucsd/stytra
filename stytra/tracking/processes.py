@@ -84,6 +84,7 @@ class FrameDispatcher(FrameProcess):
         self.tracking_cls = get_tracking_method(processing_class)
         self.processing_parameter_queue = processing_parameter_queue
 
+
     def retrieve_params(self):
         while True:
             try:
@@ -91,6 +92,13 @@ class FrameDispatcher(FrameProcess):
                 self.processing_parameters.params.values = param_dict
             except Empty:
                 break
+
+    def get_display_params(self):
+        display_processed_names = ["raw"] + getattr(self.tracking_cls, "processed_image_names", [])
+        if self.preprocessing_cls is not None:
+            display_processed_names += getattr(self.preprocessing_cls, "processed_image_names", [])
+        return dict(display_processed=Param("raw",  display_processed_names))
+
 
     def process_internal(self, frame):
         """Apply processing function to current frame with
@@ -117,12 +125,10 @@ class FrameDispatcher(FrameProcess):
         )
 
         params_dict = tracker.params.params.items()
-        display_processed_names = ["raw"] + getattr(tracker, "processed_image_names", [])
         if preprocessor is not None:
             params_dict.update(preprocessor.params.params.items())
-            display_processed_names += getattr(preprocessor, "processed_image_names", [])
 
-        params_dict.update(dict(display_processed=Param("raw",  display_processed_names)))
+        params_dict.update(self.get_display_params())
 
         if self.processing_parameters is None:
             self.processing_parameters = Parametrized(params=params_dict)
@@ -185,7 +191,16 @@ class FrameDispatcher(FrameProcess):
                         self.send_to_gui(processed)
                     else:
                         try:
-                            self.send_to_gui(tracker.diagnostic_image)
+                            tracked = tracker.diagnostic_image
+                            if tracked.shape != frame.shape:
+                                tracked = cv2.resize(
+                                    tracked,
+                                    None,
+                                    fx=frame.shape[0] / processed.shape[0],
+                                    fy=frame.shape[1] / processed.shape[1],
+                                    interpolation=cv2.INTER_AREA,
+                                )
+                            self.send_to_gui(tracked)
                         except AttributeError:
                             self.message_queue.put("E: no such processed image " +
                                                    self.processing_parameters.display_processed)
