@@ -4,43 +4,43 @@ from stytra.stimulation.stimuli.visual import StimulusCombiner, MovingGratingSti
 import pandas as pd
 import numpy as np
 
-
+# In this protocol, we demonstrate the use of a StimulusCombiner object to
+# display simultaneously different stimuli in different regions on the screen.
 class CombinedProtocol(Protocol):
-    name = "combined_protocol"  # every protocol must have a name.
+    name = "combined_protocol"
 
     def get_stim_sequence(self):
-        # This is the
-        # Use six points to specify the velocity step to be interpolated:
+        # Time and velocity array for two different gratings:
         t = [0, 1, 1, 6, 6, 7]
         vel = np.array([0, 0, 10, 10, 0, 0])
 
-        df = pd.DataFrame(dict(t=t, vel_x=vel))
-
-        s_a = MovingGratingStimulus(
-                df_param=df,
+        # Horizontal grating (grating angle 0)
+        # We define a rectangular clip mask that specifies where the stimulus
+        # will be displayed ([x, y, x_len, y_len]). To see how to specify
+        # arbitrary clipping masks look into clip_mask input description.
+        stim_a = MovingGratingStimulus(
+                df_param=pd.DataFrame(dict(t=t, vel_x=vel)),
+                grating_angle=0,
                 clip_mask=[0, 0, 1, 0.5])
 
-        df = pd.DataFrame(dict(t=t, vel_x=-vel))
-        s_b = MovingGratingStimulus(
-            df_param=df,
+        # Diagonal grating (grating angle 45):
+        stim_b = MovingGratingStimulus(
+            df_param=pd.DataFrame(dict(t=t, vel_x=vel)),
             grating_angle=45,
             clip_mask=[0, 0.5, 1, 0.5])
 
-        p = 1
-        d = 5
-
-        # Windmill
+        # Time and theta array for the windmill:
         STEPS = 0.005
-        t = np.arange(0, d, STEPS)
-        theta = np.sin(2 * np.pi * t * 0.2) * np.pi / 2
+        t_wind = np.arange(0, t[-1], STEPS)
+        theta = np.sin(2 * np.pi * t_wind * 0.2) * np.pi / 2
 
-        t = [t[0]] + list(t + p) + [(t + 2 * p)[-1]]
-        theta = [theta[0]] + list(theta) + [theta[-1]]
-        df = pd.DataFrame(dict(t=t, theta=theta))
+        # Windmill (a float clip mask value automatically describes a
+        # circular region; see clip_mask input description):
+        stim_c = HighResMovingWindmillStimulus(
+            df_param=pd.DataFrame(dict(t=t_wind, theta=theta)),
+            clip_mask=0.3)
 
-        s_c = HighResMovingWindmillStimulus(df_param=df, clip_mask=0.3)
-
-        stimuli = [StimulusCombiner([s_a, s_b, s_c])]
+        stimuli = [StimulusCombiner([stim_a, stim_b, stim_c])]
         return stimuli
 
 

@@ -105,6 +105,23 @@ sinusoidal velocity.
     param_df = pd.DataFrame(dict(t = [0, 10, 10, 20], vel_x = [0, 0, 10, 10])
 
 
+Combine multiple stimuli on the screen
+......................................
+
+For some experimental protocol we might have to combine different visual
+stimuli to be displayed in different regions of the screen. This is can be
+done easily defining all the Stimulus objects that have to be combined,
+taking care of providing them with a clip_mask parameter that specifies their
+position on the screen. Next, they have to be passed as a list to the
+StimulusCombiner object, that will be a new composite Stimulus object
+executing in parallel all the Stimuli in the list.
+
+.. literalinclude:: ../../stytra/examples/combined_exp.py
+   :language: python
+   :caption:
+
+
+
 Visualise with stim_plot parameter
 ..................................
 
