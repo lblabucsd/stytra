@@ -90,18 +90,18 @@ class FlyTrackingMethod(ImageToDataNode):
             _, contours, hierarchy = cont_ret
         else:
             contours, hierarchy = cont_ret
-
+        
         ell = False
         if len(contours) >= 2:
 
             # Get the largest ellipse:
             contour = sorted(contours, key=lambda c: c.shape[0], reverse=True)[0]
-
+           
             # Fit the ellipse for the fly, if contours has a minimal length:
             if fly_area[0] < len(contour) < fly_area[1]:
                 # ell will be a tuple ((y, x), (dim_y, dim_x), theta)
                 ell = cv2.fitEllipse(contour)
-
+                
                 max_approx_radius = np.sqrt(fly_area[1] / np.pi) * 10
                 if ell[1][0] > max_approx_radius or ell[1][1] > max_approx_radius:
                     # If ellipse axis much larger than max area set to false:
@@ -113,7 +113,7 @@ class FlyTrackingMethod(ImageToDataNode):
         else:
             # No blobs found:
             message = "W:No contours found!"
-
+        
         # Here we have the option to specify a diagnostic image if the
         # set_diagnostic attribute (set somewhere else in Stytra) is matching
         #  one of our options:
@@ -130,12 +130,12 @@ class FlyTrackingMethod(ImageToDataNode):
         else:
             # If valid, reshape it to a plain tuple:
             ell = ell[0][::-1] + ell[1][::-1] + (-ell[2],)
-
+            #print(self._output_type(*ell))
         # Return a NodeOutput object which combines the message and the
         # output named tuple created from the output type defined in the init
         #  and the tuple with our tracked values
         return NodeOutput([message], self._output_type(*ell))
-
+        
 
 # To monitor the results of the tracking from the interface, we would like to
 #  have a way of displaying the fly ellipse on top of the gui interface. This
@@ -182,7 +182,7 @@ class FlyTrackingSelection(CameraSelection):
             retrieved_data = self.experiment.acc_tracking.values_at_abs_time(
                 self.current_frame_time
             )
-
+            
             # Check for valid data to be displayed:
             if len(self.experiment.acc_tracking.stored_data) > 1:
                 checkifnan = getattr(retrieved_data, "theta")
@@ -261,7 +261,8 @@ class FlyTrackingProtocol(Protocol):
     name = "fly_tracking"
     stytra_config = dict(
         tracking=dict(method=DrosophilaPipeline),
-        camera=dict(video_file=str(r"/Users/luigipetrucco/Desktop/video.hdf5")),
+        camera=dict(video_file=str("/Users/Ray/Downloads/Free_swim_fish_ex.mp4"),
+        min_framerate=50,),
     )
 
     def get_stim_sequence(self):

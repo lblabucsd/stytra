@@ -3,11 +3,17 @@ from itertools import product
 import numpy as np
 import pims
 import qimage2ndarray
+from pathlib import Path
 
 from PyQt5.QtCore import QPoint, QRect, QPointF, Qt
 from PyQt5.QtGui import QPainter, QBrush, QColor, QPen, QTransform, QPolygon, QRegion
 
-from stytra.stimulation.stimuli import Stimulus, DynamicStimulus, InterpolatedStimulus, CombinerStimulus
+from stytra.stimulation.stimuli import (
+    Stimulus,
+    DynamicStimulus,
+    InterpolatedStimulus,
+    CombinerStimulus,
+)
 from stytra.stimulation.stimuli.backgrounds import existing_file_background
 
 
@@ -23,8 +29,8 @@ class VisualStimulus(Stimulus):
     ----------
     clip_mask :
         mask for clipping the stimulus. Unfortunately we cannot pass a QPolygon here,
-        se to allow for some flexibility there are some euristics to figure out the
-        clipping shape depending on the argument tipe and dimensions.
+        se to allow for some flexibility there are some heuristics to figure out the
+        clipping shape depending on the argument type and dimensions.
         There's tree possible cases for the mask:
             - **Circular mask**: If `clip_mask` is a single number, or a tuple of three numbers, the
               mask will be a circle.
@@ -142,9 +148,7 @@ class FullFieldVisualStimulus(VisualStimulus):
         p.drawRect(QRect(-1, -1, w + 2, h + 2))  # draw full field rectangle
 
 
-class DynamicLuminanceStimulus(
-    FullFieldVisualStimulus, InterpolatedStimulus
-):
+class DynamicLuminanceStimulus(FullFieldVisualStimulus, InterpolatedStimulus):
     """ A luminance stimulus that has dynamically specified luminance.
 
 
@@ -249,73 +253,64 @@ class PositionStimulus(VisualStimulus, DynamicStimulus):
     """Stimulus with a defined position and orientation to the fish.
         """
 
-    def __init__(self, *args, centre_relative=False, **kwargs):
+    def __init__(self, *args, x=0, y=0, theta=0, **kwargs):
         """ """
-        self.x = 0
-        self.y = 0
-        self.theta = 0
-        self.centre_relative = centre_relative
-        self.name = "Stimulus_position"
+        self.x = x
+        self.y = y
+        self.theta = theta
         super().__init__(*args, dynamic_parameters=["x", "y", "theta"], **kwargs)
-
-class DoublePositionStimulus(VisualStimulus, DynamicStimulus):
-    """MLB: Stimulus with a defined position and orientation to multiple fish.
-        """
-
-    def __init__(self, *args, centre_relative=False, **kwargs):
-        """ """
-        self.x0 = 0
-        self.y0 = 0
-        self.x1 = 0
-        self.y1 = 0
-        self.theta0 = 0
-        self.theta1 = 0
-        self.centre_relative = centre_relative
-        self.name = "Stimulus_position"
-
-        super().__init__(*args, dynamic_parameters=["x0", "y0", "theta0","x1", "y1", "theta1"], **kwargs)
-
-class MultiPositionStimulus(VisualStimulus, DynamicStimulus):
-    """MLB: Stimulus with a defined position and orientation to multiple fish.
-        """
-
-    def __init__(self, *args, centre_relative=False, **kwargs):
-        """ """
-        self.x0 = 0
-        self.y0 = 0
-        self.x1 = 0
-        self.y1 = 0
-        self.x2 = 0
-        self.y2 = 0
-        self.x3 = 0
-        self.y3 = 0
-        self.theta0 = 0
-        self.theta1 = 0
-        self.theta2 = 0
-        self.theta3 = 0
-
-        self.centre_relative = centre_relative
-        self.name = "Stimulus_position"
-
-        super().__init__(*args, dynamic_parameters=["x0", "y0", "theta0","x1", "y1", "theta1", "x2", "y2", "theta2", "x3", "y3", "theta3"], **kwargs)
 
 
 class BackgroundStimulus(PositionStimulus):
     """Stimulus with a tiling background
         """
 
+    def __init__(self, *args, background_color=(0, 0, 0), **kwargs):
+        self.background_color = background_color
+        super().__init__(*args, **kwargs)
+
     def get_unit_dims(self, w, h):
         return w, h
 
-    def get_rot_transform(self, w, h):
-        xc = -w / 2
-        yc = -h / 2
-        return (
-            QTransform()
-            .translate(-xc, -yc)
-            .rotate(self.theta * 180 / np.pi)
-            .translate(xc, yc)
+    def get_transform(self, w, h, x, y):
+        return QTransform().rotate(self.theta * 180 / np.pi).translate(x, y)
+
+    def get_tile_ranges(self, imw, imh, w, h, tr: QTransform):
+        """ Calculates the number of tiles depending on the transform.
+
+        Parameters
+        ----------
+        imw
+        imh
+        w
+        h
+        tr
+
+        Returns
+        -------
+
+        """
+
+        # we find where the display surface is in the coordinate system of a single tile
+        corner_points = [
+            np.array([0.0, 0.0]),
+            np.array([w, 0.0]),
+            np.array([w, h]),
+            np.array([0.0, h]),
+        ]
+        points_transformed = np.array(
+            [tr.inverted()[0].map(*cp) for cp in corner_points]
         )
+
+        # calculate the rectangle covering the transformed display surface
+        min_x, min_y = np.min(points_transformed, 0)
+        max_x, max_y = np.max(points_transformed, 0)
+
+        # count which tiles need to be drawn
+        x_start, x_end = (int(np.floor(min_x / imw)), int(np.ceil(max_x / imw)))
+        y_start, y_end = (int(np.floor(min_y / imh)), int(np.ceil(max_y / imh)))
+
+        return range(x_start, x_end + 1), range(y_start, y_end + 1)
 
     def paint(self, p, w, h):
         if self._experiment.calibrator is not None:
@@ -326,37 +321,22 @@ class BackgroundStimulus(PositionStimulus):
         self.clip(p, w, h)
 
         # draw the black background
-        p.setBrush(QBrush(QColor(0, 0, 0)))
+        p.setBrush(QBrush(QColor(*self.background_color)))
         p.drawRect(QRect(-1, -1, w + 2, h + 2))
 
         imw, imh = self.get_unit_dims(w, h)
 
-        dx = self.x / mm_px - np.floor(self.x / mm_px / imw) * imw
-        dy = self.y / mm_px - np.floor((self.y / mm_px) / imh) * imh
-
-        if self.centre_relative:
-            # find the centres of the display and image
-            display_centre = (w / 2, h / 2)
-            image_centre = (imw / 2, imh / 2)
-
-            dx = display_centre[0] - image_centre[0] + dx
-            dy = display_centre[1] - image_centre[1] - dy
+        dx = self.x / mm_px
+        dy = self.y / mm_px
 
         # rotate the coordinate transform around the position of the fish
-        p.setTransform(self.get_rot_transform(w, h))
+        tr = self.get_transform(w, h, dx, dy)
+        p.setTransform(tr)
 
-        # calculate the rotated rectangle which encloses the display rectangle
-        new_h = np.abs(np.sin(self.theta)) * w + np.abs(np.cos(self.theta)) * h
-        new_w = np.abs(np.cos(self.theta)) * w + np.abs(np.sin(self.theta)) * h
+        for idx, idy in product(*self.get_tile_ranges(imw, imh, w, h, tr)):
+            self.draw_block(p, QPointF(idx * imw, idy * imh), w, h)
 
-        n_w = int(np.ceil(new_w / (imw * 2)))
-        n_h = int(np.ceil(new_h / (imh * 2)))
-
-        for idx, idy in product(range(-n_w - 1, n_w + 1), range(-n_h - 1, n_h + 1)):
-            self.draw_block(p, QPointF(idx * imw + dx, idy * imh + dy), w, h)
-        # p.setTransform(QTransform)
         p.resetTransform()
-        # self.clip(p,w,h)
 
     def draw_block(self, p, point, w, h):
         """ Has to be defined in each child of the class, defines what
@@ -365,19 +345,28 @@ class BackgroundStimulus(PositionStimulus):
         Parameters
         ----------
         p :
-
+            
         point :
-
+            
         w :
-
+            
         h :
-
+            
 
         Returns
         -------
 
         """
         pass
+
+
+class CenteredBackgroundStimulus(BackgroundStimulus):
+    def get_transform(self, w, h, x, y):
+        return (
+            QTransform().translate(-w / 2, -h / 2)
+            * super().get_transform(w, h, x, y)
+            * QTransform().translate(w / 2, h / 2)
+        )
 
 
 class SeamlessImageStimulus(BackgroundStimulus):
@@ -398,6 +387,8 @@ class SeamlessImageStimulus(BackgroundStimulus):
         else:
             if isinstance(background, str):
                 self.background_name = background
+            elif isinstance(background, Path):
+                self.background_name = background.name
             else:
                 self.background_name = "array {}x{}".format(*self._background.shape)
         self._qbackground = None
@@ -411,6 +402,10 @@ class SeamlessImageStimulus(BackgroundStimulus):
                 existing_file_background(
                     self._experiment.asset_dir + "/" + self._background
                 )
+            )
+        elif isinstance(self._background, Path):
+            self._qbackground = qimage2ndarray.array2qimage(
+                existing_file_background(self._background)
             )
         else:
             self._qbackground = qimage2ndarray.array2qimage(self._background)
@@ -448,10 +443,9 @@ class GratingStimulus(BackgroundStimulus):
         wave_shape="square",
         grating_col_1=(255,) * 3,
         grating_col_2=(0,) * 3,
-        center_relative=True,
         **kwargs
     ):
-        super().__init__(*args, centre_relative=center_relative, **kwargs)
+        super().__init__(*args, background_color=grating_col_2, **kwargs)
         self.theta = grating_angle
         self.grating_period = grating_period
         self.wave_shape = wave_shape
@@ -496,7 +490,7 @@ class GratingStimulus(BackgroundStimulus):
 
 class PaintGratingStimulus(BackgroundStimulus):
     """ Class for creating a grating pattern drawing rectangles with PyQt.
-    Note that this class does not moves
+    Note that this class does not move
     the grating pattern, to move you need to subclass this together with a dynamic
     stimulus where the x of the gratings is changing (see `MovingGratingStimulus`).
 
@@ -508,7 +502,7 @@ class PaintGratingStimulus(BackgroundStimulus):
         grating_angle=0,
         grating_period=10,
         grating_col_1=(255, 255, 255),
-        grating_col_2=None,
+        grating_col_2=(0, 0, 0),
         **kwargs
     ):
         """
@@ -516,7 +510,7 @@ class PaintGratingStimulus(BackgroundStimulus):
         :param grating_period: spatial period of the gratings (unit?)
         :param grating_color: color for the non-black stripes (int tuple)
         """
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, background_color=grating_col_2, **kwargs)
         self.theta = grating_angle
         self.grating_period = grating_period
         self.color = grating_col_1
@@ -548,11 +542,13 @@ class PaintGratingStimulus(BackgroundStimulus):
             self.barheight,
         )
 
+
 class MovingGratingStimulus(PaintGratingStimulus, InterpolatedStimulus):
     # TODO refactor to cisambiguate
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.dynamic_parameters.append("x")
+
 
 class MovingGratingStimulus(PaintGratingStimulus, InterpolatedStimulus):
     def __init__(self, *args, **kwargs):
@@ -660,83 +656,6 @@ class RadialSineStimulus(VisualStimulus):
         ).astype(np.uint8)
         p.drawImage(QPoint(0, 0), qimage2ndarray.array2qimage(self.image))
 
-
-class DoubleFishOverlayStimulus(DoublePositionStimulus):
-    """ MLB: For testing freely-swimming closed loop
-    """
-    def __init__(self, color=(255, 50, 0), **kwargs):
-        super().__init__(**kwargs)
-        self.color = color
-        self.name = "fish_overlay"
-
-    def paint(self, p, w, h):
-        p.setPen(Qt.NoPen)
-        p.setBrush(QBrush(QColor(*self.color)))
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setBrush(QBrush(QColor(255, 255, 255)))
-        l = 30
-        for x,y,th in [(self.x0,self.y0,self.theta0),(self.x1,self.y1,self.theta1)]:
-            if x > w/2:
-                p.drawEllipse(x-5-int(w/2), y-5-0, 10, 10)
-                p.setPen(QPen(QColor(*self.color),3))
-                p.drawLine(x-int(w/2),y,x-int(w/2) + np.cos(th) * l,y + np.sin(th) * l)
-            elif x < w/2:
-                p.drawEllipse(x-5+int(w/2), y-5-0, 10, 10)
-                p.setPen(QPen(QColor(*self.color),3))
-                p.drawLine(x+int(w/2),y,x+int(w/2) + np.cos(th) * l,y + np.sin(th) * l)
-
-
-class MultiFishOverlayStimulus(MultiPositionStimulus):
-    """ MLB: For testing freely-swimming closed loop
-    """
-    def __init__(self, color=(50, 125, 75), **kwargs):
-        super().__init__(**kwargs)
-        self.color = color
-        self.name = "fish_overlay"
-
-    def paint(self, p, w, h):
-        #draws background first
-        p.setBrush(QBrush(QColor(255, 255, 255)))
-        self.clip(p, w, h)
-        p.drawRect(QRect(-1, -1, w + 2, h + 2))
-
-        p.setPen(Qt.NoPen)
-        p.setBrush(QBrush(QColor(*self.color)))
-        p.setRenderHint(QPainter.Antialiasing)
-        
-        p.setBrush(QBrush(QColor(50, 125, 75)))
-        l = 30
-        
-        
-        for x,y,th in [(self.x0,self.y0,self.theta0),(self.x1,self.y1,self.theta1),(self.x2,self.y2,self.theta2),(self.x3,self.y3,self.theta3)]:
-            if x > w/2 and y < h/2:
-                p.drawEllipse(x-5-int(w/2), y-5-0, 10, 10)
-                p.drawEllipse(x-5-int(w/2), y-5+int(h/2), 10, 10)
-                p.drawEllipse(x-5-0, y-5+int(h/2), 10, 10)
-                p.setPen(QPen(QColor(*self.color),3))
-                p.drawLine(x-int(w/2),y,x-int(w/2) + np.cos(th) * l,y + np.sin(th) * l)
-            elif x < w/2 and y < h/2:
-                p.drawEllipse(x-5+int(w/2), y-5-0, 10, 10)
-                p.drawEllipse(x-5+int(w/2), y-5+int(h/2), 10, 10)
-                p.drawEllipse(x-5-0, y-5+int(h/2), 10, 10)
-                p.setPen(QPen(QColor(*self.color),3))
-                p.drawLine(x+int(w/2),y,x+int(w/2) + np.cos(th) * l,y + np.sin(th) * l)
-            elif x < w/2 and y > h/2:
-                p.drawEllipse(x-5+int(w/2), y-5-0, 10, 10)
-                p.drawEllipse(x-5+int(w/2), y-5-int(h/2), 10, 10)
-                p.drawEllipse(x-5-0, y-5-int(h/2), 10, 10)
-                p.setPen(QPen(QColor(*self.color),3))
-                p.drawLine(x+int(w/2),y,x+int(w/2) + np.cos(th) * l,y + np.sin(th) * l)
-            elif x > w/2 and y > h/2:
-                p.drawEllipse(x-5-int(w/2), y-5-0, 10, 10)
-                p.drawEllipse(x-5-int(w/2), y-5-int(h/2), 10, 10)
-                p.drawEllipse(x-5-0, y-5-int(h/2), 10, 10)
-                p.setPen(QPen(QColor(*self.color),3))
-                p.drawLine(x+int(w/2),y,x+int(w/2) + np.cos(th) * l,y + np.sin(th) * l)
-
-
-
-
 class FishOverlayStimulus2(PositionStimulus):
     """ For testing freely-swimming closed loop
     """
@@ -744,22 +663,49 @@ class FishOverlayStimulus2(PositionStimulus):
         super().__init__(**kwargs)
         self.color = color
         self.name = "fish_overlay"
+        
 
     def paint(self, p, w, h):
         p.setPen(Qt.NoPen)
         p.setBrush(QBrush(QColor(*self.color)))
         p.setRenderHint(QPainter.Antialiasing)
         p.setBrush(QBrush(QColor(255, 255, 255)))
-        p.drawEllipse(self.x-5, self.y-5, 10, 10)
+        p.drawEllipse(self.x-20, self.y-20, 10, 10)
         p.setPen(QPen(QColor(*self.color),3))
         l = 30
         p.drawLine(
-            self.x,
-            self.y,
-            self.x + np.cos(self.theta) * l,
-            self.y + np.sin(self.theta) * l,
+            self.x-20,
+            self.y-20,
+            self.x-20 + np.cos(self.theta) * l,
+            self.y-20 + np.sin(self.theta) * l,
         )
 
+class FishOverlayStimulus3(PositionStimulus):
+    """ For testing freely-swimming closed loop
+    """
+    def __init__(self, color=(255, 50, 0), x_offset=[20, 50, -20, -50], y_offset=[50, 20, -50, 20], n_fish_display = 4, **kwargs,):
+        super().__init__(**kwargs)
+        self.color = color
+        self.name = "fish_overlay"
+        self.x_offset = x_offset
+        self.y_offset = y_offset
+        self.n_fish_display = n_fish_display
+
+    def paint(self, p, w, h):
+        p.setPen(Qt.NoPen)
+        p.setBrush(QBrush(QColor(*self.color)))
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setBrush(QBrush(QColor(255, 255, 255)))
+        for i in range(self.n_fish_display):
+            p.drawEllipse(self.x + self.x_offset[i], self.y + self.y_offset[i], 15, 15)
+            p.setPen(QPen(QColor(*self.color),3))
+            l = 30
+            p.drawLine(
+                self.x+self.x_offset[i],
+                self.y+self.y_offset[i],
+                self.x+self.x_offset[i] + np.cos(self.theta) * l,
+                self.y+self.y_offset[i] + np.sin(self.theta) * l,
+            )
 
 class FishOverlayStimulus(PositionStimulus):
     """ For testing freely-swimming closed loop, draws a fish in the corresponding
@@ -776,8 +722,8 @@ class FishOverlayStimulus(PositionStimulus):
         p.setPen(Qt.NoPen)
         p.setBrush(QBrush(QColor(*self.color)))
         p.setRenderHint(QPainter.Antialiasing)
-        p.setBrush(QBrush(QColor(255, 255, 255)))
-        p.drawEllipse(self.x, self.y, 3, 3)
+        p.setBrush(QBrush(QColor(255, 0, 255)))
+        p.drawEllipse(self.x, self.y, 10, 10)
         p.setPen(QPen(QColor(*self.color)))
         l = 20
         p.drawLine(
@@ -800,7 +746,7 @@ def z_func_windmill(x, y, arms):
         ) * (y >= 0).astype(int)
 
 
-class WindmillStimulus(BackgroundStimulus):
+class WindmillStimulus(CenteredBackgroundStimulus):
     """ Class for drawing a rotating windmill (radial wedges in alternating colors).
     For moving gratings use subclass
 
@@ -860,13 +806,12 @@ class WindmillStimulus(BackgroundStimulus):
 
 
 class MovingWindmillStimulus(WindmillStimulus, InterpolatedStimulus):
-    #TODO what is this class for?
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.dynamic_parameters.append("theta")
 
 
-class HighResWindmillStimulus(BackgroundStimulus):
+class HighResWindmillStimulus(CenteredBackgroundStimulus):
     """Class for drawing a rotating windmill with sharp edges.
     Instead of rotating an image, this class use a painter to draw triangles
     of the windmill at every timestep.
@@ -930,7 +875,6 @@ class HighResWindmillStimulus(BackgroundStimulus):
 
 
 class HighResMovingWindmillStimulus(HighResWindmillStimulus, InterpolatedStimulus):
-    #TODO that does this class do?
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.dynamic_parameters.append("theta")
@@ -943,10 +887,10 @@ class CircleStimulus(VisualStimulus, DynamicStimulus):
     Parameters
     ---------
     origin : tuple(float, float)
-        positions of the circle centre (in mm)
+        positions of the circle centre (as fraction of screen size)
 
     radius : float
-        circle radius (in mm)
+        circle radius (as fraction of screen size)
 
     backgroud_color : tuple(int, int, int)
         RGB color of the background
@@ -966,7 +910,7 @@ class CircleStimulus(VisualStimulus, DynamicStimulus):
         circle_color=(255, 255, 255),
         **kwargs
     ):
-        super().__init__(*args, dynamic_parameters=["x", "y", "radius"], **kwargs)
+        super().__init__(*args, **kwargs) #dynamic_parameters=["x", "y", "radius"], **kwargs)
         self.x = origin[0]
         self.y = origin[1]
         self.radius = radius
@@ -977,11 +921,6 @@ class CircleStimulus(VisualStimulus, DynamicStimulus):
     def paint(self, p, w, h):
         super().paint(p, w, h)
 
-        if self._experiment.calibrator is not None:
-            mm_px = self._experiment.calibrator.mm_px
-        else:
-            mm_px = 1
-
         # draw the background
         p.setPen(Qt.NoPen)
         p.setBrush(QBrush(QColor(*self.background_color)))
@@ -991,6 +930,7 @@ class CircleStimulus(VisualStimulus, DynamicStimulus):
         # draw the circle
         p.setBrush(QBrush(QColor(*self.circle_color)))
         p.drawEllipse(QPointF(self.x * w, self.y * h), self.radius * w, self.radius * h)
+
 
 class CalibratedCircleStimulus(VisualStimulus, DynamicStimulus):
     """ A filled circle stimulus, which in combination with interpolation
@@ -1038,83 +978,25 @@ class CalibratedCircleStimulus(VisualStimulus, DynamicStimulus):
         else:
             mm_px = 1
 
-        #print(mm_px)
+        print(mm_px)
 
-        # draw the background - moved to multifishoverlay
-        #p.setPen(Qt.NoPen)
-        #p.setBrush(QBrush(QColor(*self.background_color)))
-        #self.clip(p, w, h)
-        #p.drawRect(QRect(-1, -1, w + 2, h + 2))
+        # draw the background
+        p.setPen(Qt.NoPen)
+        p.setBrush(QBrush(QColor(*self.background_color)))
+        self.clip(p, w, h)
+        p.drawRect(QRect(-1, -1, w + 2, h + 2))
 
         # draw the circle
         p.setBrush(QBrush(QColor(*self.circle_color)))
         p.drawEllipse(QPointF(self.x / mm_px, self.y / mm_px),
                       self.radius / mm_px, self.radius / mm_px)
 
-class TrackingCircleStimulus(DoublePositionStimulus, VisualStimulus):
-    """ A filled circle stimulus, which in combination with interpolation
-    can be used to make looming stimuli
 
-    Parameters
-    ---------
-    origin : tuple(float, float)
-        positions of the circle centre (in mm)
-
-    radius : float
-        circle radius (in mm)
-
-    backgroud_color : tuple(int, int, int)
-        RGB color of the background
-
-    circle_color : tuple(int, int, int)
-        RGB color of the circle
-
+class FixationCrossStimulus(FullFieldVisualStimulus):
+    """ Draws a simple cross in the center of the visual field
 
     """
 
-    def __init__(
-        self,
-        *args,
-        origin=(0.5, 0.5),
-        radius=10,
-        background_color=(0, 0, 0),
-        circle_color=(255, 255, 255),
-        **kwargs
-    ):
-        super().__init__(**kwargs)
-        #super().__init__(*args, dynamic_parameters=["x", "y", "radius"], **kwargs)
-        #self.x = origin[0]
-        #self.y = origin[1]
-        self.radius = 10
-        self.background_color = background_color
-        self.circle_color = circle_color
-        self.name = "circle"
-
-    def paint(self, p, w, h):
-        super().paint(p, w, h)
-
-        if self._experiment.calibrator is not None:
-            mm_px = self._experiment.calibrator.mm_px
-        else:
-            mm_px = 1
-
-        #print(mm_px)
-
-        # draw the background - moved to multifishoverlay
-        #p.setPen(Qt.NoPen)
-        #p.setBrush(QBrush(QColor(*self.background_color)))
-        #self.clip(p, w, h)
-        #p.drawRect(QRect(-1, -1, w + 2, h + 2))
-
-        # draw the circle
-        p.setBrush(QBrush(QColor(*self.circle_color)))
-        p.drawEllipse(QPointF(self.x0, self.y0),
-                      self.radius / mm_px, self.radius / mm_px)
-        #p.drawEllipse(QPointF(self.x0 / mm_px, self.y0 / mm_px),
-        #              self.radius / mm_px, self.radius / mm_px)
-                      
-class FixationCrossStimulus(FullFieldVisualStimulus):
-    #TODO what does this class do?
     def __init__(
         self,
         cross_color=(255, 0, 0),

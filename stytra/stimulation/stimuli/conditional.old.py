@@ -85,177 +85,9 @@ class PauseOutsideStimulus(DynamicStimulus):
         p.drawRect(QRect(-1, -1, w + 2, h + 2))
         self.active.paint(p, w, h)
 
-class DoublePauseOutsideStimulus(DynamicStimulus):
-    #MLB: added to allow multi-fish
-     #MLB: added to allow multi-fish
-    def __init__(self, stim, reset_phase=0, **kwargs):
-        super().__init__(**kwargs)
-        self.name = "conditional"
-        self.active = stim
-        self._elapsed_difference = 0
-        self._elapsed_when_centering_started = 0
-        self.reset_phase = reset_phase
-
-        self.value = False
-        self.dynamic_parameters.append("value")
-
-        self.duration = self.active.duration
-        self.stimulus_dynamic = hasattr(stim, "dynamic_parameters")
-        self._dt = 0
-        self._past_t = 0
-        self._previous_value = False
-
-    @property
-    def dynamic_parameter_names(self):
-        if self.stimulus_dynamic:
-            return super().dynamic_parameter_names + self.active.dynamic_parameter_names
-        else:
-            return super().dynamic_parameter_names
-
-    def get_dynamic_state(self):
-        state = super().get_dynamic_state()
-        if self.stimulus_dynamic and self.value:
-            state.update(self.active.get_dynamic_state())
-        return state
-
-    def initialise_external(self, experiment):
-        super().initialise_external(experiment)
-        self.active.initialise_external(experiment)
-
-    def get_state(self):
-        state = super().get_state()
-        state.update({"stim": self.active.get_state()})
-        return state
-
-    def start(self):
-        super().start()
-        self.active.start()
-
-    def check_condition(self):
-        y0, x0, theta0, y1, x1, theta1 = self._experiment.estimator.get_position()
-        return not np.isnan(y0)
-
-    def update(self):
-        super().update()
-
-        self._dt = self._elapsed - self._past_t
-        self._past_t = self._elapsed
-        if not self.check_condition():
-            self.value = False
-            self.duration += self._dt
-            self.active.duration += self._dt
-            self._elapsed_difference += self._dt
-        else:
-            if self.reset_phase > 0 and not self._previous_value:
-                phase_reset = max(self.active.current_phase - (self.reset_phase - 1), 0)
-                self.active._elapsed = self.active.phase_times[phase_reset]
-                time_added = (
-                    self._elapsed
-                    - self._elapsed_difference
-                    - self.active.phase_times[phase_reset]
-                )
-                self.duration += time_added
-                self._elapsed_difference += time_added
-                self.value = True
-
-        self.active._elapsed = self._elapsed - self._elapsed_difference
-        self._previous_value = self.value
-        self.active.update()
-
-    def paint(self, p, w, h):
-        p.setBrush(QBrush(QColor(0, 0, 0)))
-        p.drawRect(QRect(-1, -1, w + 2, h + 2))
-        self.active.paint(p, w, h)
-
-
-class MultiPauseOutsideStimulus(DynamicStimulus):
-    #MLB: added to allow multi-fish
-    def __init__(self, stim, reset_phase=0, **kwargs):
-        super().__init__(**kwargs)
-        self.name = "conditional"
-        self.active = stim
-        self._elapsed_difference = 0
-        self._elapsed_when_centering_started = 0
-        self.reset_phase = reset_phase
-
-        self.value = False
-        self.dynamic_parameters.append("value")
-
-        self.duration = self.active.duration
-        self.stimulus_dynamic = hasattr(stim, "dynamic_parameters")
-        self._dt = 0
-        self._past_t = 0
-        self._previous_value = False
-
-    @property
-    def dynamic_parameter_names(self):
-        if self.stimulus_dynamic:
-            return super().dynamic_parameter_names + self.active.dynamic_parameter_names
-        else:
-            return super().dynamic_parameter_names
-
-    def get_dynamic_state(self):
-        state = super().get_dynamic_state()
-        if self.stimulus_dynamic and self.value:
-            state.update(self.active.get_dynamic_state())
-        return state
-
-    def initialise_external(self, experiment):
-        super().initialise_external(experiment)
-        self.active.initialise_external(experiment)
-
-    def get_state(self):
-        state = super().get_state()
-        state.update({"stim": self.active.get_state()})
-        return state
-
-    def start(self):
-        super().start()
-        self.active.start()
-
-    def check_condition(self):
-        y0, x0, theta0, y1, x1, theta1 = self._experiment.estimator.get_position()
-        return not np.isnan(y0)
-
-    #def check_condition(self):
-      #  y0, x0, theta0, y1, x1, theta1, y2, x2, theta2, y3, x3, theta3 = self._experiment.estimator.get_position()
-       # return not np.isnan(y0)
-
-    def update(self):
-        super().update()
-
-        self._dt = self._elapsed - self._past_t
-        self._past_t = self._elapsed
-        if not self.check_condition():
-            self.value = False
-            self.duration += self._dt
-            self.active.duration += self._dt
-            self._elapsed_difference += self._dt
-        else:
-            if self.reset_phase > 0 and not self._previous_value:
-                phase_reset = max(self.active.current_phase - (self.reset_phase - 1), 0)
-                self.active._elapsed = self.active.phase_times[phase_reset]
-                time_added = (
-                    self._elapsed
-                    - self._elapsed_difference
-                    - self.active.phase_times[phase_reset]
-                )
-                self.duration += time_added
-                self._elapsed_difference += time_added
-                self.value = True
-
-        self.active._elapsed = self._elapsed - self._elapsed_difference
-        self._previous_value = self.value
-        self.active.update()
-
-    def paint(self, p, w, h):
-        p.setBrush(QBrush(QColor(0, 0, 0)))
-        p.drawRect(QRect(-1, -1, w + 2, h + 2))
-        self.active.paint(p, w, h)
-
 
 class ConditionalWrapper(DynamicStimulus):
-    """ A wrapper for stimuli which switches between two stimuli dependending on
+    """ A wrapper for stimuli which switches between two stimuli depending on
     conditions: an on condition defined in the check_condition_on method
     and an off condition defined check_condition_on
 
@@ -270,11 +102,13 @@ class ConditionalWrapper(DynamicStimulus):
         which resets the stim_on to the state at the beginning of the current phase,
         1 to go to the next phase or -1 to go to the previous phase.
     reset_to_mod_phase: tuple (int, int), optional, default None
+        (index, modulo)
         if the stim_on consists of paired phases (e.g. motion on, motion off), it can
-        one can reset to the begging of the bigger phase.
+        one can reset to the begging of one of the pair: (0, 2)
         If the stimulation pattern is e.g. [no_motion, motion_left, motion_right] to
         always get to no_motion on reenter reset_to_mod_phase would be set to (0, 3)
-        This paremeter can be combined with reset_phase_shift, but in usual cases it
+        The first element is the phase index, the second the modulo (
+        This parameter can be combined with reset_phase_shift, but in usual cases it
         has to be set to 0
 
     """
@@ -346,6 +180,15 @@ class ConditionalWrapper(DynamicStimulus):
     def check_condition_off(self):
         return True
 
+    def get_phase(self):
+        new_phase = max(self.active.current_phase + self.reset_phase_shift, 0)
+        if self.reset_to_mod_phase is not None:
+            outer_phase = new_phase // self.reset_to_mod_phase[1]
+            new_phase = (
+                outer_phase * self.reset_to_mod_phase[1] + self.reset_to_mod_phase[0]
+            )
+        return new_phase
+
     def update(self):
         self._dt = self._elapsed - self._past_t
         self._past_t = self._elapsed
@@ -360,18 +203,12 @@ class ConditionalWrapper(DynamicStimulus):
             self.active = self._stim_on
 
             if self.reset_phase:
-                new_phase = max(self.active.current_phase + self.reset_phase_shift, 0)
-                if self.reset_to_mod_phase is not None:
-                    outer_phase = new_phase // self.reset_to_mod_phase[1]
-                    new_phase = (
-                        outer_phase * self.reset_to_mod_phase[1]
-                        + self.reset_to_mod_phase[0]
-                    )
+                new_phase = self.get_phase()
+                time_in_stim = self._elapsed - self._elapsed_difference
                 time_added = (
-                    self._elapsed
-                    - self._elapsed_difference
-                    - self.active.phase_times[new_phase]
-                )
+                    time_in_stim - self.active.phase_times[new_phase]
+                )  # time that passed after the phase
+                # we want to be in, is lost
                 self.duration += time_added
                 self._elapsed_difference += time_added
 

@@ -1,16 +1,15 @@
 import numpy as np
+from PyQt5.QtGui import QTransform
 
 try:
     from random import choices
 except ImportError:
-    print("Cannot import choiches!")
+    print("Cannot import choices!")
 
 from stytra.stimulation.stimuli import (
     DynamicStimulus,
     BackgroundStimulus,
     PositionStimulus,
-    MultiPositionStimulus,
-    DoublePositionStimulus,
     InterpolatedStimulus,
     Stimulus,
 )
@@ -35,10 +34,19 @@ class Basic_CL_1D(BackgroundStimulus, InterpolatedStimulus, DynamicStimulus):
             a bout
         fixed_vel: float
             if not None, fixed velocity for the stimulus when fish swims
+        max_interbout_time: float
+            if not None, maximum time allowed without any bout detected, after
+            which the experiment is aborted
         """
 
     def __init__(
-        self, *args, base_vel=10, swimming_threshold=-2, max_fish_vel=40, **kwargs
+        self,
+        *args,
+        base_vel=10,
+        swimming_threshold=-2,
+        max_fish_vel=40,
+        max_interbout_time=None,
+        **kwargs
     ):
         super().__init__(*args, **kwargs)
         self.name = "general_cl1D"
@@ -54,6 +62,8 @@ class Basic_CL_1D(BackgroundStimulus, InterpolatedStimulus, DynamicStimulus):
         # For within-bout checks:
         self.bout_start = np.nan
         self.bout_stop = np.nan
+        self.max_interbout_time = max_interbout_time
+        self.prev_bout_t = 0
 
     def get_fish_vel(self):
         """ Function that update estimated fish velocty. Change to add lag or
@@ -64,7 +74,7 @@ class Basic_CL_1D(BackgroundStimulus, InterpolatedStimulus, DynamicStimulus):
     def bout_started(self):
         """ Function called on bout start.
         """
-        pass
+        self.prev_bout_t = self._elapsed
 
     def bout_occurring(self):
         pass
@@ -75,6 +85,15 @@ class Basic_CL_1D(BackgroundStimulus, InterpolatedStimulus, DynamicStimulus):
         pass
 
     def update(self):
+        if self.max_interbout_time is not None:
+            if self._elapsed - self.prev_bout_t > self.max_interbout_time:
+                self._experiment.logger.info(
+                    "Experiment aborted! {} seconds without bouts".format(
+                        self._elapsed - self.prev_bout_t
+                    )
+                )
+                self.abort_experiment()
+
         self.get_fish_vel()
 
         # If estimated velocity greater than threshold
@@ -110,25 +129,32 @@ class Basic_CL_1D(BackgroundStimulus, InterpolatedStimulus, DynamicStimulus):
     def calculate_final_vel(self):
         self.vel = self.base_vel - self.fish_vel * int(self.fish_swimming)
 
+    def abort_experiment(self):
+        self._experiment.protocol_runner.stop()
+
 
 class CalibratingClosedLoop1D(Basic_CL_1D):
     """
-    Vigor-based closed loop stimulus. Velocity is assumed to be calculated
-    with the
-
-    The parameters can change in time if the df_param is supplied which
-    specifies their values in time.
+    Special closed-loop class that adjust vigor estimator gain value until
+    fish velocity achieved matches a specified target value.
+    The experiment is automatically aborted if not enough bouts are performed or
+    if the gain value is outside a normal range.
 
     Parameters
     ----------
-    base_vel:
-        the velocity of the background when the stimulus is not moving
-    swimming_threshold: float
-        the velocity at which the fish is considered to be performing
-        a bout
+    target_avg_fish_vel: float
+        target fish velocity, in mm/s
+    calibrate_after: int
+        minimum number of bouts after which calibration happens.
+    min_bout_n: int
+        minimum number of performed bouts
+    valid_gain_range: tuple
+        (min, max) values for the final gain to be considered valid
     """
 
-    def __init__(self, target_avg_fish_vel=-15, calibrate_after=5, **kwargs):
+    def __init__(
+        self, target_avg_fish_vel=-15, calibrate_after=5, min_bout_n=30, **kwargs
+    ):
         super().__init__(**kwargs)
         self.name = "calibrating_cl1D"
         self.dynamic_parameters.extend(["est_gain", "median_calib"])
@@ -145,8 +171,12 @@ class CalibratingClosedLoop1D(Basic_CL_1D):
         self.final_vel = np.nan
         self.median_calib = np.nan
         self.est_gain = 0
+        self.min_bout_n = 30
+        self.valid_gain_range = (-40, -10)
+        self.min_bout_duration = 0.2
 
     def bout_started(self):
+        super().bout_started()
         self.est_gain = self._experiment.estimator.base_gain
 
     def bout_occurring(self):
@@ -154,7 +184,7 @@ class CalibratingClosedLoop1D(Basic_CL_1D):
 
     def bout_ended(self):
 
-        if self.bout_stop - self.bout_start > 0.2:
+        if self.bout_stop - self.bout_start > self.min_bout_duration:
             self.bout_counter += 1
 
             # Update list with peak velocities and reset current peak vel:
@@ -171,10 +201,23 @@ class CalibratingClosedLoop1D(Basic_CL_1D):
         self.bout_vel = []
 
     def stop(self):
+        if (
+            len(self.bouts_vig_list) < self.min_bout_n
+            or self.est_gain > self.valid_gain_range[1]
+            or self.est_gain < self.valid_gain_range[0]
+        ):
+            self.abort_experiment()
+
+            self._experiment.logger.info(
+                "Experiment aborted! N bouts: {}; gain: {}".format(
+                    len(self.bouts_vig_list), self.est_gain
+                )
+            )
+
         if len(self.bouts_vig_list) > self.calibrate_after:
             self._experiment.logger.info(
-                "Calibrated! Median speed achieved: {} with {} bouts".format(
-                    self.median_calib, len(self.bouts_vig_list)
+                "Calibrated! Calculated gain  {} with {} bouts".format(
+                    self.est_gain, len(self.bouts_vig_list)
                 )
             )
 
@@ -269,6 +312,7 @@ class AcuteClosedLoop1D(GainLagClosedLoop1D):
     def bout_started(self):
         """ Function called on bout start.
         """
+        super().bout_started()
         # reset to baseline values:
         if self.current_condition is not None:
             for k in self.current_condition["change_to"].keys():
@@ -315,48 +359,13 @@ class FishTrackingStimulus(PositionStimulus):
                 self.theta = theta
         super().update()
 
-class DoubleFishTrackingStimulus(DoublePositionStimulus):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.dynamic_parameters.append("is_tracking")
-        self.is_tracking = True
 
-    def update(self):
-        if self.is_tracking:
-            y0, x0, theta0, y1, x1, theta1 = self._experiment.estimator.get_position()
-            if np.isfinite(theta0):
-                self.x0 = x0
-                self.y0 = y0
-                self.theta0 = theta0
-            if np.isfinite(theta1):
-                self.x1 = x1
-                self.y1 = y1
-                self.theta1 = theta1
-        super().update()
-
-class MultiFishTrackingStimulus(MultiPositionStimulus):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.dynamic_parameters.append("is_tracking")
-        self.is_tracking = True
-
-    def update(self):
-        if self.is_tracking:
-            y0, x0, theta0, y1, x1, theta1, y2, x2, theta2, y3, x3, theta3 = self._experiment.estimator.get_position()
-            if np.isfinite(theta0):
-                self.x0 = x0
-                self.y0 = y0
-                self.theta0 = theta0
-            if np.isfinite(theta1):
-                self.x1 = x1
-                self.y1 = y1
-                self.theta1 = theta1
-            if np.isfinite(theta2):
-                self.x2 = x2
-                self.y2 = y2
-                self.theta2 = theta2
-            if np.isfinite(theta3):
-                self.x3 = x3
-                self.y3 = y3
-                self.theta3 = theta3
-        super().update()
+class FishRelativeStimulus(BackgroundStimulus):
+    def get_transform(self, w, h, x, y):
+        y_fish, x_fish, theta_fish = self._experiment.estimator.get_position()
+        if np.isnan(y_fish):
+            return super().get_transform(w, h, x, y)
+        rot_fish = (theta_fish - np.pi / 2) * 180 / np.pi
+        return super().get_transform(w, h, x, y) * (
+            QTransform().translate(x_fish, y_fish).rotate(rot_fish)
+        )

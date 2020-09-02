@@ -359,8 +359,8 @@ class VideoFileSource(VideoSource):
                     for m in messages:
                         self.message_queue.put(m)
 
-                container.seek(0, whence="frame")
-
+                container.seek(0)#, whence="frame")
+                #This is where you commented out the default section - Ray
             return
 
 

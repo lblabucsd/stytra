@@ -262,7 +262,7 @@ class CombinerStimulus(DynamicStimulus):
     """
 
     def __init__(self, stim_list):
-        super().__init__()
+        super().__init__() 
         self._stim_list = stim_list
 
         self.duration = max([s.duration for s in stim_list])

@@ -167,7 +167,7 @@ class FishTrackingMethod(ImageToDataNode):
 
             # take the region and mask the background away to aid detection
             fishdet = bg[slices].copy()
-
+            
             # estimate the position of the head
             fish_coords = fish_start(fishdet, threshold_eyes)
 
@@ -307,6 +307,7 @@ class Fishes(object):
                     # update tail angles
                     self.coords[i_fish, 6:] = new_fish[3:]
                     self.i_not_updated[i_fish] = 0
+                    
                     return True
 
     def add_fish(self, new_fish):

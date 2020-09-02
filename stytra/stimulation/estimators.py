@@ -69,24 +69,6 @@ class VigorMotionEstimator(Estimator):
         return vigor * self.base_gain
 
 
-class BoutsEstimator(VigorMotionEstimator):
-    def __init__(self, *args, bout_threshold = 0.05, vigor_window=0.05,
-                 min_interbout=0.1, **kwargs):
-        super().__init__(*args, base_gain=1, **kwargs)
-        self.bout_threshold = bout_threshold
-        self.vigor_window = vigor_window
-        self.min_interbout = min_interbout
-        self.last_bout_t = None
-
-    def bout_occured(self):
-        if self.get_velocity() > self.base_gain*self.bout_threshold:
-            if self.last_bout_t is None or (datetime.datetime.now() - self.last_bout_t).total_seconds() > \
-                        self.min_interbout:
-                self.last_bout_t = datetime.datetime.now()
-                return True
-        return False
-
-
 def rot_mat(theta):
     """The rotation matrix for an angle theta """
     return np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
@@ -189,9 +171,12 @@ class PositionEstimator(Estimator):
         return c_values
 
 
-class SimulatedPositionEstimator(Estimator):
-    def __init__(self, *args, motion, **kwargs):
-        """ Uses the projector-to-camera calibration to give fish position in
+estimator_dict = dict(position=PositionEstimator, vigor=VigorMotionEstimator)
+
+class DoublePositionEstimator(Estimator):
+    def __init__(self, *args, change_thresholds=None, velocity_window=10, **kwargs):
+        """ MLB: maing this for multiple fish
+        Uses the projector-to-camera calibration to give fish position in
         scree coordinates. If change_thresholds are set, update only the fish
         position after there is a big enough change (which prevents small
         oscillations due to tracking)
@@ -202,17 +187,231 @@ class SimulatedPositionEstimator(Estimator):
         :param kwargs:
         """
         super().__init__(*args, **kwargs)
-        self.motion = motion
-        self._output_type = namedtuple("f", ["x", "y", "theta"])
+        self.calibrator = self.exp.calibrator
+        self.last_location = None
+        self.past_values = None
+
+        self.velocity_window = velocity_window
+        self.change_thresholds = change_thresholds
+        if change_thresholds is not None:
+            self.change_thresholds = np.array(change_thresholds)
+
+        self._output_type = namedtuple("f", ["x0", "y0", "theta0", "x1", "y1", "theta1"])
+        #mlb: or, organize as f0[x0,y0,th0],f1[x1,y1,th1]  ?
+
+    def get_camera_position(self):
+        past_coords = {
+            name: value
+            for name, value in zip(
+                self.acc_tracking.columns, self.acc_tracking.get_last_n(1)[0, :]
+            )
+        }
+        return past_coords["f0_x"], past_coords["f0_y"], past_coords["f0_theta"],past_coords["f1_x"], past_coords["f1_y"], past_coords["f1_theta"]
+
+    def get_velocity(self):
+        vel = np.diff(
+            self.acc_tracking.get_last_n(self.velocity_window)[["f0_x", "f0_y"]].values,
+            0,
+        )
+        return np.sqrt(np.sum(vel ** 2))
+
+    def get_istantaneous_velocity(self):
+        vel_xy = self.acc_tracking.get_last_n(self.velocity_window)[
+            ["f0_vx", "f0_vy"]
+        ].values
+        return np.sqrt(np.sum(vel_xy ** 2))
+
+    def reset(self):
+        super().reset()
+        self.past_values = None
 
     def get_position(self):
-        t = (datetime.datetime.now() - self.exp.t0).total_seconds()
+        if len(self.acc_tracking.stored_data) == 0 or not np.isfinite(
+            self.acc_tracking.stored_data[-1].f0_x
+        ):
+            o = self._output_type(np.nan, np.nan, np.nan, np.nan, np.nan, np.nan)
+            return o
 
-        kt = tuple(
-            np.interp(t, self.motion.t, self.motion[p]) for p in ("y", "x", "theta")
+        past_coords = self.acc_tracking.stored_data[-1]
+        t = self.acc_tracking.times[-1]
+
+        if not self.calibrator.cam_to_proj is None:
+            projmat = np.array(self.calibrator.cam_to_proj)
+            if projmat.shape != (2, 3):
+                projmat = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+
+            x0, y0 = projmat @ np.array([past_coords.f0_x, past_coords.f0_y, 1.0])
+            x1, y1 = projmat @ np.array([past_coords.f1_x, past_coords.f1_y, 1.0])
+
+            theta0 = np.arctan2(
+                *(
+                    projmat[:, :2]
+                    @ np.array(
+                        [np.cos(past_coords.f0_theta), np.sin(past_coords.f0_theta)]
+                    )[::-1]
+                )
+            )
+            theta1 = np.arctan2(
+                *(
+                    projmat[:, :2]
+                    @ np.array(
+                        [np.cos(past_coords.f1_theta), np.sin(past_coords.f1_theta)]
+                    )[::-1]
+                )
+            )
+        else:
+            x0, y0, theta0 = past_coords.f0_x, past_coords.f0_y, past_coords.f0_theta
+            x1, y1, theta1 = past_coords.f1_x, past_coords.f1_y, past_coords.f1_theta
+
+        c_values = np.array((y0, x0, theta0, y1, x1, theta1))
+
+        if self.change_thresholds is not None:
+
+            if self.past_values is None:
+                self.past_values = np.array(c_values)
+            else:
+                deltas = c_values - self.past_values
+                deltas[2] = reduce_to_pi(deltas[2])
+                sel = np.abs(deltas) > self.change_thresholds
+                self.past_values[sel] = c_values[sel]
+                c_values = self.past_values
+
+        logout = self._output_type(*c_values)
+        self.log.update_list(t, logout)
+
+        return c_values
+
+
+estimator_dict = dict(position=PositionEstimator, vigor=VigorMotionEstimator, doubleposition=DoublePositionEstimator)
+
+class MultiPositionEstimator(Estimator):
+    def __init__(self, *args, change_thresholds=None, velocity_window=10, **kwargs):
+        """ MLB: maing this for multiple fish
+        Uses the projector-to-camera calibration to give fish position in
+        scree coordinates. If change_thresholds are set, update only the fish
+        position after there is a big enough change (which prevents small
+        oscillations due to tracking)
+
+        :param args:
+        :param calibrator:
+        :param change_thresholds: a 3-tuple of thresholds, in px and radians
+        :param kwargs:
+        """
+        super().__init__(*args, **kwargs)
+        self.calibrator = self.exp.calibrator
+        self.last_location = None
+        self.past_values = None
+
+        self.velocity_window = velocity_window
+        self.change_thresholds = change_thresholds
+        if change_thresholds is not None:
+            self.change_thresholds = np.array(change_thresholds)
+
+        self._output_type = namedtuple("f", ["x0", "y0", "theta0", "x1", "y1", "theta1", "x2", "y2", "theta2", "x3", "y3", "theta3"])
+        #mlb: or, organize as f0[x0,y0,th0],f1[x1,y1,th1]  ?
+
+    def get_camera_position(self):
+        past_coords = {
+            name: value
+            for name, value in zip(
+                self.acc_tracking.columns, self.acc_tracking.get_last_n(1)[0, :]
+            )
+        }
+        return past_coords["f0_x"], past_coords["f0_y"], past_coords["f0_theta"],past_coords["f1_x"], past_coords["f1_y"], past_coords["f1_theta"], past_coords["f2_x"], past_coords["f2_y"], past_coords["f2_theta"], past_coords["f3_x"], past_coords["f3_y"], past_coords["f3_theta"]
+
+        
+    def get_velocity(self):
+        vel = np.diff(
+            self.acc_tracking.get_last_n(self.velocity_window)[["f0_x", "f0_y"]].values,
+            0,
         )
-        return kt
+        return np.sqrt(np.sum(vel ** 2))
+
+    def get_istantaneous_velocity(self):
+        vel_xy = self.acc_tracking.get_last_n(self.velocity_window)[
+            ["f0_vx", "f0_vy"]
+        ].values
+        return np.sqrt(np.sum(vel_xy ** 2))
+
+    def reset(self):
+        super().reset()
+        self.past_values = None
+
+    def get_position(self):
+        if len(self.acc_tracking.stored_data) == 0 or not np.isfinite(
+            self.acc_tracking.stored_data[-1].f0_x
+        ):
+            o = self._output_type(np.nan, np.nan, np.nan, np.nan, np.nan, np.nan)
+            return o
+
+        past_coords = self.acc_tracking.stored_data[-1]
+        t = self.acc_tracking.times[-1]
+
+        if not self.calibrator.cam_to_proj is None:
+            projmat = np.array(self.calibrator.cam_to_proj)
+            if projmat.shape != (2, 3):
+                projmat = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+
+            x0, y0 = projmat @ np.array([past_coords.f0_x, past_coords.f0_y, 1.0])
+            x1, y1 = projmat @ np.array([past_coords.f1_x, past_coords.f1_y, 1.0])
+            x2, y2 = projmat @ np.array([past_coords.f2_x, past_coords.f2_y, 1.0])
+            x3, y3 = projmat @ np.array([past_coords.f3_x, past_coords.f3_y, 1.0])
+
+            theta0 = np.arctan2(
+                *(
+                    projmat[:, :2]
+                    @ np.array(
+                        [np.cos(past_coords.f0_theta), np.sin(past_coords.f0_theta)]
+                    )[::-1]
+                )
+            )
+            theta1 = np.arctan2(
+                *(
+                    projmat[:, :2]
+                    @ np.array(
+                        [np.cos(past_coords.f1_theta), np.sin(past_coords.f1_theta)]
+                    )[::-1]
+                )
+            )
+            theta2 = np.arctan2(
+                *(
+                    projmat[:, :2]
+                    @ np.array(
+                        [np.cos(past_coords.f2_theta), np.sin(past_coords.f2_theta)]
+                    )[::-1]
+                )
+            )
+            theta3 = np.arctan2(
+                *(
+                    projmat[:, :2]
+                    @ np.array(
+                        [np.cos(past_coords.f3_theta), np.sin(past_coords.f3_theta)]
+                    )[::-1]
+                )
+            )
+        else:
+            x0, y0, theta0 = past_coords.f0_x, past_coords.f0_y, past_coords.f0_theta
+            x1, y1, theta1 = past_coords.f1_x, past_coords.f1_y, past_coords.f1_theta
+            x2, y2, theta2 = past_coords.f2_x, past_coords.f2_y, past_coords.f2_theta
+            x3, y3, theta3 = past_coords.f3_x, past_coords.f3_y, past_coords.f3_theta
+
+        c_values = np.array((y0, x0, theta0, y1, x1, theta1, y2, x2, theta2, y3, x3, theta3))
+
+        if self.change_thresholds is not None:
+
+            if self.past_values is None:
+                self.past_values = np.array(c_values)
+            else:
+                deltas = c_values - self.past_values
+                deltas[2] = reduce_to_pi(deltas[2])
+                sel = np.abs(deltas) > self.change_thresholds
+                self.past_values[sel] = c_values[sel]
+                c_values = self.past_values
+
+        logout = self._output_type(*c_values)
+        self.log.update_list(t, logout)
+
+        return c_values
 
 
-estimator_dict = dict(position=PositionEstimator, vigor=VigorMotionEstimator,
-                      bouts=BoutsEstimator)
+estimator_dict = dict(position=PositionEstimator, vigor=VigorMotionEstimator, doubleposition=DoublePositionEstimator, multiposition=MultiPositionEstimator)
