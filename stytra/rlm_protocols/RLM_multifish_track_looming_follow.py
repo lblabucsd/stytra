@@ -11,14 +11,14 @@ from stytra.stimulation.stimuli import (
     InterpolatedStimulus, 
     DoubleFishOverlayStimulus,
 )
-from stytra.stimulation.stimuli.visual import TrackingCircleStimulus
+from stytra.stimulation.stimuli.visual import MultiTrackingCircleStimulus
 from stytra.stimulation.stimuli.conditional import PauseOutsideStimulus, DoublePauseOutsideStimulus
 
 from stytra.stimulation import Protocol
 from lightparam import Param
 from pathlib import Path
 
-class LoomingFollowStimulus(InterpolatedStimulus, TrackingCircleStimulus):
+class LoomingFollowStimulus(InterpolatedStimulus, MultiTrackingCircleStimulus):
     name = "looming_follow_stimulus"
 
 

@@ -1108,11 +1108,76 @@ class TrackingCircleStimulus(DoublePositionStimulus, VisualStimulus):
 
         # draw the circle
         p.setBrush(QBrush(QColor(*self.circle_color)))
-        p.drawEllipse(QPointF(self.x0, self.y0),
+        p.drawEllipse(QPointF(self.x0/2, self.y0),
                       self.radius / mm_px, self.radius / mm_px)
         #p.drawEllipse(QPointF(self.x0 / mm_px, self.y0 / mm_px),
         #              self.radius / mm_px, self.radius / mm_px)
                       
+
+class MultiTrackingCircleStimulus(DoublePositionStimulus, VisualStimulus):
+    """ A filled circle stimulus, which in combination with interpolation
+    can be used to make looming stimuli
+
+    Parameters
+    ---------
+    origin : tuple(float, float)
+        positions of the circle centre (in mm)
+
+    radius : float
+        circle radius (in mm)
+
+    backgroud_color : tuple(int, int, int)
+        RGB color of the background
+
+    circle_color : tuple(int, int, int)
+        RGB color of the circle
+
+
+    """
+
+    def __init__(
+        self,
+        *args,
+        origin=(0.5, 0.5),
+        radius=10,
+        background_color=(0, 0, 0),
+        circle_color=(255, 255, 255),
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        #super().__init__(*args, dynamic_parameters=["x", "y", "radius"], **kwargs)
+        #self.x = origin[0]
+        #self.y = origin[1]
+        self.radius = 10
+        self.background_color = background_color
+        self.circle_color = circle_color
+        self.name = "circle"
+
+    def paint(self, p, w, h):
+        super().paint(p, w, h)
+
+        if self._experiment.calibrator is not None:
+            mm_px = self._experiment.calibrator.mm_px
+        else:
+            mm_px = 1
+
+        #print(mm_px)
+
+        # draw the background - moved to multifishoverlay
+        #p.setPen(Qt.NoPen)
+        #p.setBrush(QBrush(QColor(*self.background_color)))
+        #self.clip(p, w, h)
+        #p.drawRect(QRect(-1, -1, w + 2, h + 2))
+
+        # draw the circle
+        p.setBrush(QBrush(QColor(*self.circle_color)))
+        p.drawEllipse(QPointF(self.x0, self.y0),
+                      self.radius / mm_px, self.radius / mm_px)
+        p.drawEllipse(QPointF(self.x1, self.y1),
+                      self.radius / mm_px, self.radius / mm_px)
+        #p.drawEllipse(QPointF(self.x0 / mm_px, self.y0 / mm_px),
+        #              self.radius / mm_px, self.radius / mm_px)
+
 class FixationCrossStimulus(FullFieldVisualStimulus):
     #TODO what does this class do?
     def __init__(
